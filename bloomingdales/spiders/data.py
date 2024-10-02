@@ -43,7 +43,8 @@ class DataSpider(scrapy.Spider):
         self.end = end
 
     def start_requests(self):
-        obj.cur.execute(f'select * from {obj.links_pdp_table} where status=0 limit {self.start},{self.end}')
+        # obj.cur.execute(f'select * from {obj.links_pdp_table} where status=0 limit {self.start},{self.end}')
+        obj.cur.execute(f'select * from {obj.links_pdp_table} where status=0 and id >= {self.start} and id <= {self.end}')
         rows = obj.cur.fetchall()
         for row in rows:
             link = row['link']
