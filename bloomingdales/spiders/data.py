@@ -11,12 +11,11 @@ import scrapy
 from scrapy import Request
 from scrapy.cmdline import execute as ex
 from bloomingdales.db_config import DbConfig
-from bloomingdales.common_func import page_write, create_md5_hash, proxy, proxy_scraper
+from bloomingdales.common_func import page_write, create_md5_hash, storm, scraper, zyte
 from fake_useragent import UserAgent
 ua = UserAgent()
 
 obj = DbConfig()
-
 
 def headers():
     headers = {
@@ -43,15 +42,11 @@ class DataSpider(scrapy.Spider):
         self.start = start
         self.end = end
 
-
     def start_requests(self):
-        # obj.cur.execute(f'select * from {obj.links_pdp_table} where status=0 and id>={self.start} and id<={self.end}')
         obj.cur.execute(f'select * from {obj.links_pdp_table} where status=0 limit {self.start},{self.end}')
-        # obj.cur.execute(f'select * from {obj.links_pdp_table} where link like "%5243737%" limit {self.start},{self.end}')
         rows = obj.cur.fetchall()
         for row in rows:
             link = row['link']
-            # link = 'https://www.bloomingdales.com/shop/product/frame-duo-fold-crew-shirt?ID=5011694&CategoryID=11536'
             hashid = create_md5_hash(link)
             pagesave_dir = rf"C:/Users/Actowiz/Desktop/pagesave/bloomingdales/{today_date}"
             file_name = fr"{pagesave_dir}/{hashid}.html"
@@ -62,9 +57,6 @@ class DataSpider(scrapy.Spider):
             meta['link'] = link
             meta['product_id'] = row['product_id']
 
-
-
-
             if os.path.exists(file_name):
                 yield scrapy.Request(
                     url='file:///' + file_name,
@@ -73,10 +65,7 @@ class DataSpider(scrapy.Spider):
                     dont_filter= True
                 )
             else:
-
                 yield scrapy.Request(url= link, headers= headers(), cb_kwargs= meta, callback= self.parse, dont_filter= True)
-
-
 
     def parse(self, response, **kwargs):
         sizes_list = ''
@@ -108,15 +97,13 @@ class DataSpider(scrapy.Spider):
                 if not sizes_list:
                     sizes_list = product_div.xpath(".//span[contains(@class, 'label') and contains(text(), 'Size')]//following-sibling::div//option/@value").getall()
                     sizes_list = ', '.join(sizes_list)
-
                 if not sizes_list:
                     for i in range(1,1000):
                         print('sizes script update')
                         time.sleep(i)
+
             if 'color' in label.lower():
-
                 color_label_list = product_div.xpath(".//input[contains(@aria-label, 'Color:')]/@aria-label").getall()
-
                 color_list = list()
                 for color_label in color_label_list:
                     color = color_label.replace('Color: ', '')
@@ -130,9 +117,7 @@ class DataSpider(scrapy.Spider):
                     for i in range(1,1000):
                         print('color script update')
                         time.sleep(i)
-
         try:
-
             review_count_ = re.findall('"reviewCount":.*?,', response.text)[0]
             review_count = review_count_.replace('"reviewCount":"', '').replace('",', '').replace(',', '')
             kwargs['review_count'] = int(review_count)
@@ -143,26 +128,21 @@ class DataSpider(scrapy.Spider):
         category_list = response.xpath("//li[@class='p-menuitem']//span/text()").getall()
         category = '-'.join(category_list)
         kwargs['category'] = category
-        # scrape_date = datetime.datetime.today().strftime("%d-%m-%Y")
-        # product_url = kwargs['link']
         title = product_div.xpath(".//span[@itemprop='name']/text()").get()
         kwargs['title'] = title
         price = product_div.xpath(".//div[@data-el='price-details']//span/text()").get()
         kwargs['price'] = price
-        # discounted_price = ''
         color_list = color_final
         kwargs['color_list'] = color_final
         kwargs['size_list'] = sizes_list
         rating = product_div.xpath(".//span[contains(@class,'rating-average')]/text()").get()
         kwargs['rating'] = rating
         description = product_div.xpath(".//div[@data-analytics-key='product_details']/following-sibling::div/div[@class='p-accordion-content']//text()").getall()
-
         product_description = ' | '.join(description)
         kwargs['product_description'] = product_description
         material_care_list = product_div.xpath(".//div[@data-analytics-key='materials_and_care']/following-sibling::div//span/text()").getall()
         material_and_care = ' | '.join(material_care_list)
         kwargs['material_care_list'] = material_and_care
-
         review_url = f"https://www.bloomingdales.com/xapi/digital/v1/product/{product_id}/reviews?sort=NEWEST&limit=8&offset=0"
         hashid_review = create_md5_hash(review_url)
         pagesave_dir_review = rf"C:/Users/Actowiz/Desktop/pagesave/bloomingdales/{today_date}"
@@ -170,13 +150,12 @@ class DataSpider(scrapy.Spider):
         kwargs['pagesave_dir_review'] = pagesave_dir_review
         kwargs['file_name_review'] = file_name_review
         kwargs['hashid_review'] = hashid_review
-        kwargs['proxy'] = proxy()
-
+        kwargs['proxy'] = scraper()
         if os.path.exists(file_name_review):
             yield scrapy.Request(url= 'file:///' + file_name_review, cb_kwargs= kwargs, callback= self.parse_review, dont_filter= True)
         else:
             if int(review_count) > 0:
-                yield scrapy.Request(url= review_url, headers= headers_review(), cb_kwargs=kwargs, meta={'http':proxy()}, callback= self.parse_review, dont_filter= True)
+                yield scrapy.Request(url= review_url, headers= headers_review(), cb_kwargs=kwargs, meta={'http':scraper()}, callback= self.parse_review, dont_filter= True)
             else:
                 yield scrapy.Request(url= 'file:///' + file_name, cb_kwargs= kwargs, callback= self.parse_review, dont_filter= True)
 
@@ -186,10 +165,8 @@ class DataSpider(scrapy.Spider):
         if not os.path.exists(file_name_review):
             page_write(pagesave_dir_review, file_name_review, response.text)
         review_count = kwargs['review_count']
-
         if review_count > 8:
             item = BloomingdalesItem()
-
             item['category'] = kwargs['category']
             item['scrapeDate'] = datetime.datetime.today().strftime("%d-%m-%Y")
             item['url'] = kwargs['link']
@@ -215,7 +192,6 @@ class DataSpider(scrapy.Spider):
             response_ = response_.replace('\\"', '')
             jsn_review = json.loads(response_)
             for review in jsn_review['review']['reviews']:
-                # review_user = review['userNickname']
                 review_user_rating = review['rating']
                 try:review_title = review['title']
                 except:review_title=''
@@ -236,7 +212,6 @@ class DataSpider(scrapy.Spider):
 
             for offset in range(8, review_count, 30):
                 review_url = f"https://www.bloomingdales.com/xapi/digital/v1/product/{kwargs['product_id']}/reviews?sort=NEWEST&limit=30&offset={offset}"
-
                 hashid_review = create_md5_hash(review_url)
                 pagesave_dir_review = rf"C:/Users/Actowiz/Desktop/pagesave/bloomingdales/{today_date}"
                 file_name_review = fr"{pagesave_dir_review}/{hashid_review}.json"
@@ -247,7 +222,7 @@ class DataSpider(scrapy.Spider):
                 if os.path.exists(file_name_review):
                     yield scrapy.Request(url= 'file:///' + file_name_review, cb_kwargs= kwargs, callback= self.parse_final, dont_filter= True)
                 else:
-                    yield scrapy.Request(url= review_url, headers= headers_review(), cb_kwargs= kwargs, meta={'http':proxy()}, callback= self.parse_final, dont_filter= True)
+                    yield scrapy.Request(url= review_url, headers= headers_review(), cb_kwargs= kwargs, meta={'http':scraper()}, callback= self.parse_final, dont_filter= True)
         elif review_count > 0:
             yield scrapy.Request(url='file:///' + kwargs['file_name_review'], cb_kwargs=kwargs, callback=self.parse_final,
                                  dont_filter=True)
@@ -255,7 +230,6 @@ class DataSpider(scrapy.Spider):
             yield scrapy.Request(url= 'file:///' + kwargs['file_name'], cb_kwargs= kwargs, callback= self.parse_final, dont_filter= True)
 
     def parse_final(self, response, **kwargs):
-
         review_count = kwargs['review_count']
         pagesave_dir_review = kwargs['pagesave_dir_review']
         file_name_review = kwargs['file_name_review']
@@ -265,9 +239,6 @@ class DataSpider(scrapy.Spider):
             page_write(pagesave_dir_review, file_name_review, response.text)
 
         item = BloomingdalesItem()
-
-
-
         item['category'] = kwargs['category']
         item['scrapeDate'] = datetime.datetime.today().strftime("%d-%m-%Y")
         item['url'] = kwargs['link']
@@ -300,7 +271,6 @@ class DataSpider(scrapy.Spider):
                 review_date = review['submissionTime']
                 review_date_strp = datetime.datetime.strptime(review_date, "%b %d, %Y")
                 review_date_strf = review_date_strp.strftime("%d-%m-%Y")
-
                 item['review_date'] = review_date_strf
                 try:item['review_title'] = review['title']
                 except:item['review_title'] = ''
@@ -311,10 +281,7 @@ class DataSpider(scrapy.Spider):
                 item['hashid_review'] = hashid_review
 
                 yield item
-
         else:
-
-
             item['review_date'] = ''
             item['review_title'] = ''
             item['review_text'] = ''
@@ -323,9 +290,8 @@ class DataSpider(scrapy.Spider):
             item['hashid_review'] = hashid_review
 
             yield item
+
         obj.update_links_pdp_status(item['url'])
-
-
 
 if __name__ == '__main__':
     try:

@@ -6,10 +6,8 @@ rows = obj.cur.fetchall()
 end = rows[0]['count(id)']
 
 start = 1
-# end = 139912
 num_parts = 1
 
-# pincode = 400001
 
 # Calculate the number of items in each part
 items_per_part = (end - start + 1) // num_parts
